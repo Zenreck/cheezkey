@@ -14,27 +14,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User ID required" }, { status: 400 })
     }
 
-    // Check rate limit and key count for this user
-    const userKeyPrefix = `user:${userId}:keys`
-    const userKeys = await redis.keys(`${userKeyPrefix}:*`)
+    const userRequestsKey = `requests:${userId}`
+    const existingRequests = ((await redis.get(userRequestsKey)) as any[]) || []
 
-    // Clean up expired keys
+    // Clean up expired or old declined requests
     const now = Date.now()
-    for (const keyName of userKeys) {
-      const keyData = await redis.get(keyName)
-      if (keyData && typeof keyData === "object" && "expiresAt" in keyData) {
-        if (keyData.expiresAt < now) {
-          await redis.del(keyName)
-        }
+    const activeRequests = existingRequests.filter((req: any) => {
+      if (req.status === "approved" && req.expiresAt && req.expiresAt < now) {
+        return false
       }
-    }
+      return true
+    })
 
-    // Re-check active keys after cleanup
-    const activeKeys = await redis.keys(`${userKeyPrefix}:*`)
-    const validKeyCount = activeKeys.length
-
-    if (validKeyCount >= 2) {
-      return NextResponse.json({ error: "Maximum 2 keys reached. Wait for keys to expire." }, { status: 429 })
+    if (activeRequests.length >= 2) {
+      return NextResponse.json({ error: "Maximum 2 key requests reached" }, { status: 429 })
     }
 
     // Check cooldown (30 seconds between generations)
@@ -45,44 +38,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Please wait 30 seconds between generations" }, { status: 429 })
     }
 
-    // Generate a random key
-    const key = generateRandomKey()
-    const expiresAt = now + 60 * 60 * 1000 // 1 hour from now
+    const requestId = `${userId}:${Date.now()}`
+    const newRequest = {
+      requestId,
+      userId,
+      status: "pending" as const,
+      createdAt: now,
+    }
 
-    // Store the key in Redis with 1 hour TTL
-    const keyId = `${userKeyPrefix}:${Date.now()}`
-    await redis.set(
-      keyId,
-      { key, expiresAt, userId },
-      { ex: 60 * 60 }, // 1 hour expiration
-    )
+    // Add to user's requests
+    activeRequests.push(newRequest)
+    await redis.set(userRequestsKey, activeRequests)
+
+    // Add to pending queue for admin
+    const pendingKey = `pending:${requestId}`
+    await redis.set(pendingKey, newRequest, { ex: 86400 }) // 24 hour expiry for pending
 
     // Set cooldown for 30 seconds
-    await redis.set(cooldownKey, Date.now(), { ex: 30 })
+    await redis.set(cooldownKey, now, { ex: 30 })
 
     return NextResponse.json({
-      key,
-      expiresAt,
-      message: "Key generated successfully",
+      requestId,
+      status: "pending",
+      message: "Key request submitted. Waiting for admin approval.",
     })
   } catch (error) {
     console.error("[v0] Key generation error:", error)
-    return NextResponse.json({ error: "Failed to generate key" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to generate key request" }, { status: 500 })
   }
-}
-
-function generateRandomKey(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-  const segments = 4
-  const segmentLength = 4
-
-  return Array(segments)
-    .fill(0)
-    .map(() =>
-      Array(segmentLength)
-        .fill(0)
-        .map(() => chars[Math.floor(Math.random() * chars.length)])
-        .join(""),
-    )
-    .join("-")
 }
