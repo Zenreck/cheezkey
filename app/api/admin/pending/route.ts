@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server"
-import { Redis } from "@upstash/redis"
-
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL || "",
-  token: process.env.KV_REST_API_TOKEN || "",
-})
+import { getRedis } from "@/lib/redis"
 
 export async function GET() {
   try {
+    const redis = getRedis()
+    if (!redis) {
+      return NextResponse.json({ requests: [] }, { status: 200 })
+    }
+    
     // Get all pending request keys
     const pendingKeys = await redis.keys("pending:*")
 

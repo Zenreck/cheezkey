@@ -1,13 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { Redis } from "@upstash/redis"
-
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL || "",
-  token: process.env.KV_REST_API_TOKEN || "",
-})
+import { getRedis } from "@/lib/redis"
 
 export async function POST(request: NextRequest) {
   try {
+    const redis = getRedis()
+    if (!redis) {
+      return NextResponse.json({ error: "Database unavailable" }, { status: 503 })
+    }
+    
     const { requestId, action } = await request.json()
 
     if (!requestId || !action) {

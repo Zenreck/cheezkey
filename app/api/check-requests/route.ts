@@ -1,10 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { Redis } from "@upstash/redis"
-
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL || "",
-  token: process.env.KV_REST_API_TOKEN || "",
-})
+import { getRedis } from "@/lib/redis"
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,8 +8,15 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "User ID required" }, { status: 400 })
     }
+    
+    const redisClient = getRedis()
+    if (!redisClient) {
+      console.error("[v0] Redis not available")
+      return NextResponse.json({ requests: [] }, { status: 200 })
+    }
+    
     const userRequestsKey = `requests:${userId}`
-    const rawRequests = await redis.get(userRequestsKey)
+    const rawRequests = await redisClient.get(userRequestsKey)
     
     // Ensure requests is always an array
     let requests: any[] = []
@@ -34,7 +36,7 @@ export async function GET(request: NextRequest) {
     })
 
     if (validRequests.length !== requests.length) {
-      await redis.set(userRequestsKey, validRequests)
+      await redisClient.set(userRequestsKey, validRequests)
     }
 
     return NextResponse.json({ requests: validRequests })

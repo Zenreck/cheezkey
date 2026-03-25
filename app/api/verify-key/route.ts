@@ -1,10 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { Redis } from "@upstash/redis"
-
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL || "",
-  token: process.env.KV_REST_API_TOKEN || "",
-})
+import { getRedis } from "@/lib/redis"
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,6 +7,11 @@ export async function POST(request: NextRequest) {
 
     if (!key) {
       return NextResponse.json({ error: "Key required" }, { status: 400 })
+    }
+
+    const redis = getRedis()
+    if (!redis) {
+      return NextResponse.json({ valid: false, error: "Database unavailable" }, { status: 503 })
     }
 
     // Search all user requests to find matching key
