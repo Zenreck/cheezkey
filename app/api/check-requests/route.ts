@@ -2,8 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { Redis } from "@upstash/redis"
 
 const redis = new Redis({
-  url: process.env.Puro_KV_REST_API_URL!,
-  token: process.env.Puro_KV_REST_API_TOKEN!,
+  url: process.env.KV_REST_API_URL || "",
+  token: process.env.KV_REST_API_TOKEN || "",
 })
 
 export async function GET(request: NextRequest) {
@@ -13,9 +13,16 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "User ID required" }, { status: 400 })
     }
-
     const userRequestsKey = `requests:${userId}`
-    const requests = ((await redis.get(userRequestsKey)) as any[]) || []
+    const rawRequests = await redis.get(userRequestsKey)
+    
+    // Ensure requests is always an array
+    let requests: any[] = []
+    if (Array.isArray(rawRequests)) {
+      requests = rawRequests
+    } else if (rawRequests && typeof rawRequests === 'object') {
+      requests = [rawRequests]
+    }
 
     // Clean up expired approved keys
     const now = Date.now()
@@ -33,6 +40,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ requests: validRequests })
   } catch (error) {
     console.error("[v0] Check requests error:", error)
-    return NextResponse.json({ error: "Failed to check requests" }, { status: 500 })
+    return NextResponse.json({ requests: [] }, { status: 200 })
   }
 }

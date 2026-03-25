@@ -2,8 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { Redis } from "@upstash/redis"
 
 const redis = new Redis({
-  url: process.env.Puro_KV_REST_API_URL!,
-  token: process.env.Puro_KV_REST_API_TOKEN!,
+  url: process.env.KV_REST_API_URL || "",
+  token: process.env.KV_REST_API_TOKEN || "",
 })
 
 export async function POST(request: NextRequest) {
@@ -24,7 +24,15 @@ export async function POST(request: NextRequest) {
 
     const userId = pendingRequest.userId
     const userRequestsKey = `requests:${userId}`
-    const userRequests = ((await redis.get(userRequestsKey)) as any[]) || []
+    const rawRequests = await redis.get(userRequestsKey)
+    
+    // Ensure userRequests is always an array
+    let userRequests: any[] = []
+    if (Array.isArray(rawRequests)) {
+      userRequests = rawRequests
+    } else if (rawRequests && typeof rawRequests === 'object') {
+      userRequests = [rawRequests]
+    }
 
     // Find and update the request
     const requestIndex = userRequests.findIndex((r: any) => r.requestId === requestId)

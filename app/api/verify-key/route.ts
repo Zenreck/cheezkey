@@ -2,8 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { Redis } from "@upstash/redis"
 
 const redis = new Redis({
-  url: process.env.Puro_KV_REST_API_URL!,
-  token: process.env.Puro_KV_REST_API_TOKEN!,
+  url: process.env.KV_REST_API_URL || "",
+  token: process.env.KV_REST_API_TOKEN || "",
 })
 
 export async function POST(request: NextRequest) {
@@ -14,22 +14,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Key required" }, { status: 400 })
     }
 
-    // Search all user keys to find matching key
-    const allKeys = await redis.keys("user:*:keys:*")
+    // Search all user requests to find matching key
+    const allKeys = await redis.keys("requests:*")
+    const now = Date.now()
 
     for (const keyName of allKeys) {
-      const keyData = await redis.get(keyName)
+      const rawRequests = await redis.get(keyName)
+      
+      // Ensure requests is an array
+      let requests: any[] = []
+      if (Array.isArray(rawRequests)) {
+        requests = rawRequests
+      } else if (rawRequests && typeof rawRequests === 'object') {
+        requests = [rawRequests]
+      }
 
-      if (keyData && typeof keyData === "object" && "key" in keyData && keyData.key === key) {
-        const now = Date.now()
-
-        // Check if key is expired
-        if ("expiresAt" in keyData && keyData.expiresAt > now) {
-          return NextResponse.json({
-            valid: true,
-            userId: keyData.userId,
-            expiresAt: keyData.expiresAt,
-          })
+      // Check each request for a matching approved key
+      for (const req of requests) {
+        if (req.status === "approved" && req.key === key) {
+          // Check if key is expired
+          if (req.expiresAt && req.expiresAt > now) {
+            return NextResponse.json({
+              valid: true,
+              userId: req.userId,
+              expiresAt: req.expiresAt,
+            })
+          }
         }
       }
     }

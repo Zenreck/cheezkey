@@ -2,8 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { Redis } from "@upstash/redis"
 
 const redis = new Redis({
-  url: process.env.Puro_KV_REST_API_URL!,
-  token: process.env.Puro_KV_REST_API_TOKEN!,
+  url: process.env.KV_REST_API_URL || "",
+  token: process.env.KV_REST_API_TOKEN || "",
 })
 
 export async function POST(request: NextRequest) {
@@ -13,9 +13,16 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "User ID required" }, { status: 400 })
     }
-
     const userRequestsKey = `requests:${userId}`
-    const existingRequests = ((await redis.get(userRequestsKey)) as any[]) || []
+    const rawRequests = await redis.get(userRequestsKey)
+    
+    // Ensure existingRequests is always an array
+    let existingRequests: any[] = []
+    if (Array.isArray(rawRequests)) {
+      existingRequests = rawRequests
+    } else if (rawRequests && typeof rawRequests === 'object') {
+      existingRequests = [rawRequests]
+    }
 
     // Clean up expired or old declined requests
     const now = Date.now()
